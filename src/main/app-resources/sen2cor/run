@@ -3,52 +3,128 @@ set -x
 # source the ciop functions (e.g. ciop-log, ciop-getparam)
 source ${ciop_job_include}
 
-# setup SEN2COR environment
-export SEN2COR_BIN=/opt/anaconda/lib/python2.7/site-packages/sen2cor
-export GDAL_DATA=/opt/anaconda/share/gdal
-export PATH=/opt/anaconda/bin/:$PATH
-export SEN2COR_HOME=$TMPDIR/sen2cor/
+# define the exit codes
+SUCCESS=0
+ERR_INGEST=2
+ERR_MULTILOOK=4
+ERR_RADCM=6
+ERR_GEOCODEB=8
+ERR_RAS=10
+ERR_GECMAP=12
+ERR_RATIO=14
+ERR_RASPWR=16
+ERR_GEOCODEB2=18
+ERR_RAS2=20
 
-mkdir -p $TMPDIR/sen2cor/cfg
-cp $SEN2COR_BIN/cfg/L2A_GIPP.xml $SEN2COR_HOME/cfg
+# add a trap to exit gracefully
+function cleanExit ()
+{
+  local retval=$?
+  local msg=""
+  case "${retval}" in
+    ${SUCCESS}) msg="Processing successfully concluded";;
+    ${ERR_INGEST}) msg="Failed to ingest the TerraSAR-X product";;
+    ${ERR_MULTILOOK}) msg="Failed to multi look";;
+    ${ERR_RADCM}) msg="Failed to rad";;
+    ${ERR_GEOCODEB}) msg="Failed to geocode back";;
+    ${ERR_RAS}) msg="Failed to convert raster";;
+    ${ERR_GECMAP}) msg="Failed to create geocode map";;
+    ${ERR_RATIO}) msg="Failed to calculate ratio";;
+    ${ERR_RASPWR}) msg="Failed to generate raster pwr";;
+    ${ERR_GEOCODEB2}) msg="Failed to geocode back";;
+    ${ERR_RAS2}) msg="Failed to convert raster";;
+    *) msg="Unknown error";;
+  esac
 
- # report activity in log
-ciop-log "INFO" "Doing..."
+  # clean up working space
+  rm -fr ${TMPDIR}
 
-resolution="$( ciop-getparam resolution)"
+  [ "${retval}" != "0" ] && ciop-log "ERROR" "Error ${retval} - ${msg}, processing aborted" || ciop-log "INFO" "${msg}"
+  exit ${retval}
+}
 
-while read input 
-do
-  ref="$( echo $input | cut -d "," -f 1)"
-  granules="$( echo $input | cut -d "," -f 2- | tr "," "|")"
+trap cleanExit EXIT
 
-  ciop-log "INFO" "ref: ${ref}"
+
+function sen2cor_env() {
+
+  # setup SEN2COR environment
+  export SEN2COR_BIN=/opt/anaconda/lib/python2.7/site-packages/sen2cor
+  export GDAL_DATA=/opt/anaconda/share/gdal
+  export PATH=/opt/anaconda/bin/:$PATH
+  export SEN2COR_HOME=$TMPDIR/sen2cor/
+
+  mkdir -p $TMPDIR/sen2cor/cfg
+  cp $SEN2COR_BIN/cfg/L2A_GIPP.xml $SEN2COR_HOME/cfg
+
+}
+
+function process_2A() {
+
+  local ref=$1
+  local granules=$2
+  local resolution=$3
+  local online_resource=""
+  
 
   online_resource="$( opensearch-client ${ref} enclosure )"
+  
+  [ -z ${online_resource} ] && return ${ERR_NO_RESOLUTION} 
 
   local_s2="$( echo "${online_resource}" | ciop-copy -O ${TMPDIR} - )"
 
+  [ ! -d ${local_s2} ] && return ${ERR_DOWNLOAD_1C}
+
   cd ${local_s2}
-  
+
   granule_path=$( basename ${local_s2} ).SAFE/GRANULE
 
-  ls ${granule_path} | grep -Ev ${granules} | while read dead_granule 
-  do 
-    rm -fr ${granule_path}/${dead_granule}   
-  done
-  
-  ciop-log "INFO" "Invoke SEN2COR L2A_Process"
-  L2A_Process --resolution ${resolution} $( basename ${local_s2} ).SAFE  
+  [ ! -d ${granule_path} ] && return ${ERR_GRANULE_DIR}
 
-  level_2a="${local_s2}/$( basename ${local_s2} | sed 's/OPER/USER/' | sed 's/MSIL1C/MSIL2A/' ).SAFE"    
+  ls ${granule_path} | grep -Ev ${granules} | while read dead_granule
+  do
+    ciop-log "INFO" "Excluding granule ${dead_granule}"
+    rm -fr ${granule_path}/${dead_granule}
+  done
+
+  ciop-log "INFO" "Invoke SEN2COR L2A_Process"
+  L2A_Process --resolution ${resolution} $( basename ${local_s2} ).SAFE || return ${ERR_SEN2COR}
+
+  level_2a="${local_s2}/$( basename ${local_s2} | sed 's/OPER/USER/' | sed 's/MSIL1C/MSIL2A/' ).SAFE"
+ 
+  [ ! -d ${level_2a} ] && return ${ERR_LEVEL_2A_DIR}
 
   ciop-log "INFO" "Compression and publish of Level 2A"
-  tar cvfz ${local_s2}.tgz ${local_s2}
-  ciop-publish -m ${local_s2}.tgz
+  
+  tar cvfz ${local_s2}.tgz ${local_s2} || return ${ERR_COMPRESSION}
+ 
+  ciop-publish -m ${local_s2}.tgz || return ${ERR_PUBLISH}
 
   cd ${local_s2}/..
-  
-  rm -fr ${local_s2}
-done
 
-exit 0
+  rm -fr ${local_s2}
+
+}
+
+function main() {
+
+  # report activity in log
+  ciop-log "INFO" "Doing..."
+
+  local resolution="$( ciop-getparam resolution)"
+
+  while read input 
+  do
+    ref="$( echo $input | cut -d "," -f 1)"
+    granules="$( echo $input | cut -d "," -f 2- | tr "," "|")"
+ 
+    ciop-log "INFO" "Processsing $( echo ${granules} | tr "|" "\n" | wc -l ) of $(basename ${ref} )"
+
+    process_2A ${ref} ${granules} ${resolution} || return $?
+
+  done
+
+}
+
+cat | main || exit $?
+
