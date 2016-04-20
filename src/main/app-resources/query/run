@@ -3,6 +3,11 @@
 # source the ciop functions (e.g. ciop-log, ciop-getparam)
 source ${ciop_job_include}
 
+SUCCESS=0
+ERR_CAT_REF=2
+ERR_NO_TILES=4
+ERR_PUBLISH_S=6
+
 function cleanExit ()
 {
   local retval=$?
@@ -26,6 +31,7 @@ trap cleanExit EXIT
 
 function product2tiles () {
 
+  local identifier=""
   local self=""
   local startdate=""
   local enddate=""
@@ -33,7 +39,7 @@ function product2tiles () {
   
   local ref=$1  
 
-  read self startdate enddate < <( opensearch-client ${ref} self,startdate,enddate | tr "," " " )
+  read identifier self startdate enddate < <( opensearch-client ${ref} identifier,self,startdate,enddate | tr "," " " )
 
   [ -z ${self} ] || [ -z ${startdate} ] || [ -z ${enddate} ] && return ${ERR_CAT_REF}
 
@@ -45,7 +51,9 @@ function product2tiles () {
     https://data2.terradue.com/eop/sentinel2/dataset/search identifier | tr "\n" ","  | rev | cut -c 2- | rev )"
 
   [ -z ${tiles} ] && return ${ERR_NO_TILES} 
-
+ 
+  ciop-log "INFO" "Identified $( echo ${tiles} | tr "," "\n" | wc -l ) tiles in ${identifier}"
+  
   echo "${self},${tiles}" | ciop-publish -s || return ${ERR_PUBLISH_S}
 
 }
@@ -58,7 +66,7 @@ function main () {
 
   while read ref
   do
-    ciop-log "INFO" "ref: ${ref}"
+    ciop-log "INFO" "reference: ${ref}"
   
     product2tiles ${ref} || return $?
   
