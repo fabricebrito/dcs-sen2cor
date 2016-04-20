@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# source the ciop functions (e.g. ciop-log, ciop-getparam)
+source ${ciop_job_include}
+
+  # report activity in log
+ciop-log "INFO" "Doing..."
+
+bbox="$( ciop-getparam bbox)"
+
+while read ref
+do
+  ciop-log "INFO" "ref: ${ref}"
+
+  read self startdate enddate < <( opensearch-client ${ref} self,startdate,enddate | tr "," " " ) 
+
+  ciop-log "INFO" "self startdate enddate $self $startdate $enddate "
+ 
+  tiles="$( opensearch-client \
+    -p "pt=S2MSI1CT" \
+    -p "bbox=${bbox}" \
+    -p "start=${startdate}" \
+    -p "stop=${enddate}" \
+    https://data2.terradue.com/eop/sentinel2/dataset/search identifier | tr "\n" ","  | rev | cut -c 2- | rev )" 
+ 
+  echo "${self},${tiles}" | ciop-publish -s	  
+
+done
+
+exit 0

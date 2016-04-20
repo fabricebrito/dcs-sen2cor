@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# source the ciop functions (e.g. ciop-log, ciop-getparam)
+source ${ciop_job_include}
+
+  # report activity in log
+ciop-log "INFO" "Doing..."
+
+resolution="$( ciop-getparam bbox)"
+
+while read input 
+do
+  ref="$( echo $input | cut -d "," -f 1)"
+  granules="$( echo $input | cut -d "," -f 2- | tr "," "|")"
+
+  ciop-log "INFO" "ref: ${ref}"
+
+  online_resource="$( opensearch ${ref} enclosure )"
+
+  local_s2="$( echo "${online_resource}" | ciop-copy -O ${TMPDIR} - )"
+
+  cd ${local_s2}
+  
+  granule_path=$( basename ${local_s2} ).SAFE/GRANULE
+
+  ls ${granule_path} | grep -Ev ${granules} | while read dead_granule 
+  do 
+    rm -fr ${granule_path}/${dead_granule}   
+  done
+  
+  cd ${local_s2}
+
+  L2A_Process $( basename ${local_s2} ).SAFE  
+
+    
+
+done
+
+exit 0

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<application xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" id="application">
+  <jobTemplates>
+    <jobTemplate id="query">
+      <streamingExecutable>/application/query/run</streamingExecutable>
+      <defaultParameters>           
+        <parameter id="startdate" type="opensearch" target="time:start">2016-02-06T10:24:29.000Z</parameter>
+        <parameter id="enddate" type="opensearch" target="time:end">2016-02-17</parameter>
+        <parameter id="bbox" type="opensearch" target="geo:box">14.75,37.41,15.21,37.74</parameter>
+      </defaultParameters>
+      <defaultJobconf>
+        <property id="ciop.job.max.tasks">1</property>
+      </defaultJobconf>
+    </jobTemplate>
+  </jobTemplates>
+    <workflow id="workflow" title="Basic Workflow" abstract="Basic workflow archetype">
+    <workflowVersion>1.0</workflowVersion>
+    <node id="query">
+      <job id="query"/>
+      <sources>
+        <source id="series" refid="cas:series">https://data2.terradue.com/eop/sentinel2/dataset/description</source>
+      </sources>
+    </node>
+  </workflow>
+</application>
