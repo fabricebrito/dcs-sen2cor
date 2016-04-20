@@ -4,9 +4,19 @@
     <jobTemplate id="query">
       <streamingExecutable>/application/query/run</streamingExecutable>
       <defaultParameters>           
+        <parameter id="product_type" type="opensearch" target="eop:productType">S2MSI1C</parameter>
         <parameter id="startdate" type="opensearch" target="time:start">2016-02-06T10:24:29.000Z</parameter>
-        <parameter id="enddate" type="opensearch" target="time:end">2016-02-17</parameter>
+        <parameter id="enddate" type="opensearch" target="time:end">2016-02-25T23:59:59.000Z</parameter>
         <parameter id="bbox" type="opensearch" target="geo:box">14.75,37.41,15.21,37.74</parameter>
+      </defaultParameters>
+      <defaultJobconf>
+        <property id="ciop.job.max.tasks">1</property>
+      </defaultJobconf>
+    </jobTemplate>
+    <jobTemplate id="sen2cor">
+      <streamingExecutable>/application/sen2cor/run</streamingExecutable>
+      <defaultParameters>
+        <parameter id="resolution">60</parameter>
       </defaultParameters>
       <defaultJobconf>
         <property id="ciop.job.max.tasks">1</property>
@@ -19,6 +29,12 @@
       <job id="query"/>
       <sources>
         <source id="series" refid="cas:series">https://data2.terradue.com/eop/sentinel2/dataset/description</source>
+      </sources>
+    </node>
+    <node id="sen2cor">
+      <job id="sen2cor"/>
+      <sources>
+        <source refid="wf:node">query</source>
       </sources>
     </node>
   </workflow>

@@ -1,12 +1,21 @@
 #!/bin/bash
-
+set -x
 # source the ciop functions (e.g. ciop-log, ciop-getparam)
 source ${ciop_job_include}
 
-  # report activity in log
+# setup SEN2COR environment
+export SEN2COR_BIN=/opt/anaconda/lib/python2.7/site-packages/sen2cor
+export GDAL_DATA=/opt/anaconda/share/gdal
+export PATH=/opt/anaconda/bin/:$PATH
+export SEN2COR_HOME=$TMPDIR/sen2cor/
+
+mkdir -p $TMPDIR/sen2cor/cfg
+cp $SEN2COR_BIN/cfg/L2A_GIPP.xml $SEN2COR_HOME/cfg
+
+ # report activity in log
 ciop-log "INFO" "Doing..."
 
-resolution="$( ciop-getparam bbox)"
+resolution="$( ciop-getparam resolution)"
 
 while read input 
 do
@@ -15,7 +24,7 @@ do
 
   ciop-log "INFO" "ref: ${ref}"
 
-  online_resource="$( opensearch ${ref} enclosure )"
+  online_resource="$( opensearch-client ${ref} enclosure )"
 
   local_s2="$( echo "${online_resource}" | ciop-copy -O ${TMPDIR} - )"
 
@@ -28,12 +37,18 @@ do
     rm -fr ${granule_path}/${dead_granule}   
   done
   
-  cd ${local_s2}
+  ciop-log "INFO" "Invoke SEN2COR L2A_Process"
+  L2A_Process --resolution ${resolution} $( basename ${local_s2} ).SAFE  
 
-  L2A_Process $( basename ${local_s2} ).SAFE  
+  level_2a="${local_s2}/$( basename ${local_s2} | sed 's/OPER/USER/' | sed 's/MSIL1C/MSIL2A/' ).SAFE"    
 
-    
+  ciop-log "INFO" "Compression and publish of Level 2A"
+  tar cvfz ${local_s2}.tgz ${local_s2}
+  ciop-publish -m ${local_s2}.tgz
 
+  cd ${local_s2}/..
+  
+  rm -fr ${local_s2}
 done
 
 exit 0
