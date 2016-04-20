@@ -36,9 +36,6 @@ function cleanExit ()
     *) msg="Unknown error";;
   esac
 
-  # clean up working space
-  rm -fr ${TMPDIR}
-
   [ "${retval}" != "0" ] && ciop-log "ERROR" "Error ${retval} - ${msg}, processing aborted" || ciop-log "INFO" "${msg}"
   exit ${retval}
 }
@@ -66,18 +63,22 @@ function process_2A() {
   local resolution=$3
   local online_resource=""
   
-
-  online_resource="$( opensearch-client ${ref} enclosure )"
+  read identifier online_resource < <( opensearch-client ${ref} identifier,enclosure | tr "," " " )
   
   [ -z ${online_resource} ] && return ${ERR_NO_RESOLUTION} 
 
+  # temporary patch
+  online_resource="s3://eo-samples/${identifier}.zip"
+  # end of patch
+
   local_s2="$( echo "${online_resource}" | ciop-copy -O ${TMPDIR} - )"
+
 
   [ ! -d ${local_s2} ] && return ${ERR_DOWNLOAD_1C}
 
   cd ${local_s2}
 
-  granule_path=$( basename ${local_s2} ).SAFE/GRANULE
+  granule_path=${identifier}.SAFE/GRANULE
 
   [ ! -d ${granule_path} ] && return ${ERR_GRANULE_DIR}
 
@@ -88,25 +89,27 @@ function process_2A() {
   done
 
   ciop-log "INFO" "Invoke SEN2COR L2A_Process"
-  L2A_Process --resolution ${resolution} $( basename ${local_s2} ).SAFE || return ${ERR_SEN2COR}
+  L2A_Process --resolution ${resolution} ${identifier}.SAFE || return ${ERR_SEN2COR}
 
-  level_2a="${local_s2}/$( basename ${local_s2} | sed 's/OPER/USER/' | sed 's/MSIL1C/MSIL2A/' ).SAFE"
+  level_2a="$( echo ${identifier} | sed 's/OPER/USER/' | sed 's/MSIL1C/MSIL2A/' ).SAFE"
  
   [ ! -d ${level_2a} ] && return ${ERR_LEVEL_2A_DIR}
 
   ciop-log "INFO" "Compression and publish of Level 2A"
   
-  tar cvfz ${local_s2}.tgz ${local_s2} || return ${ERR_COMPRESSION}
+  tar cvfz ${identifier}.tgz ${level_2a} || return ${ERR_COMPRESSION}
  
-  ciop-publish -m ${local_s2}.tgz || return ${ERR_PUBLISH}
+  ciop-publish -m ${local_s2}/${identifier}.tgz || return ${ERR_PUBLISH}
 
-  cd ${local_s2}/..
+  cd ${TMPDIR}
 
-  rm -fr ${local_s2}
+  rm -fr ${identifier}
 
 }
 
 function main() {
+
+  sen2cor_env
 
   # report activity in log
   ciop-log "INFO" "Doing..."
